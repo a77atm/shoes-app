@@ -20,8 +20,6 @@ class AppConstants {
   // Pagination
   static const int pageSize = 20;
 
-  // Storage paths
-  static const String productImagesPath = 'product_images';
 }
 
 class AppStrings {
