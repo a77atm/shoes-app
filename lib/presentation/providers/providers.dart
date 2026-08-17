@@ -144,7 +144,6 @@ class CartNotifier extends StateNotifier<List<SaleItemModel>> {
         size: existing.size,
         quantity: existing.quantity + item.quantity,
         priceAtSale: item.priceAtSale,
-        imageUrl: existing.imageUrl,
       );
       state = updated;
     } else {
@@ -166,7 +165,6 @@ class CartNotifier extends StateNotifier<List<SaleItemModel>> {
           size: i.size,
           quantity: quantity,
           priceAtSale: i.priceAtSale,
-          imageUrl: i.imageUrl,
         );
       }
       return i;
@@ -183,7 +181,6 @@ class CartNotifier extends StateNotifier<List<SaleItemModel>> {
           size: i.size,
           quantity: i.quantity,
           priceAtSale: price,
-          imageUrl: i.imageUrl,
         );
       }
       return i;
