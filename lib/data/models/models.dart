@@ -139,7 +139,6 @@ class InventoryModel extends Equatable {
   final int openingBalance;
   final int soldQuantity;
   final double currentPrice;
-  final String? imageUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -151,7 +150,6 @@ class InventoryModel extends Equatable {
     required this.openingBalance,
     this.soldQuantity = 0,
     required this.currentPrice,
-    this.imageUrl,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -170,7 +168,6 @@ class InventoryModel extends Equatable {
       openingBalance: (map['openingBalance'] ?? 0).toInt(),
       soldQuantity: (map['soldQuantity'] ?? 0).toInt(),
       currentPrice: (map['currentPrice'] ?? 0).toDouble(),
-      imageUrl: map['imageUrl'],
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -183,7 +180,6 @@ class InventoryModel extends Equatable {
         'openingBalance': openingBalance,
         'soldQuantity': soldQuantity,
         'currentPrice': currentPrice,
-        'imageUrl': imageUrl,
         'createdAt': Timestamp.fromDate(createdAt),
         'updatedAt': Timestamp.fromDate(updatedAt),
       };
@@ -195,7 +191,6 @@ class InventoryModel extends Equatable {
     int? openingBalance,
     int? soldQuantity,
     double? currentPrice,
-    String? imageUrl,
   }) =>
       InventoryModel(
         id: id,
@@ -205,7 +200,6 @@ class InventoryModel extends Equatable {
         openingBalance: openingBalance ?? this.openingBalance,
         soldQuantity: soldQuantity ?? this.soldQuantity,
         currentPrice: currentPrice ?? this.currentPrice,
-        imageUrl: imageUrl ?? this.imageUrl,
         createdAt: createdAt,
         updatedAt: DateTime.now(),
       );
@@ -224,7 +218,6 @@ class SaleItemModel extends Equatable {
   final String size;
   final int quantity;
   final double priceAtSale; // السعر وقت البيع
-  final String? imageUrl;
 
   const SaleItemModel({
     required this.inventoryId,
@@ -233,7 +226,6 @@ class SaleItemModel extends Equatable {
     required this.size,
     required this.quantity,
     required this.priceAtSale,
-    this.imageUrl,
   });
 
   double get totalPrice => quantity * priceAtSale;
@@ -246,7 +238,6 @@ class SaleItemModel extends Equatable {
       size: map['size'] ?? '',
       quantity: (map['quantity'] ?? 1).toInt(),
       priceAtSale: (map['priceAtSale'] ?? 0).toDouble(),
-      imageUrl: map['imageUrl'],
     );
   }
 
@@ -257,7 +248,6 @@ class SaleItemModel extends Equatable {
         'size': size,
         'quantity': quantity,
         'priceAtSale': priceAtSale,
-        'imageUrl': imageUrl,
       };
 
   @override
