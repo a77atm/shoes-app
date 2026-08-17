@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ─────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    function isEmployee() {
+      return isAuthenticated() && (getUserRole() == 'admin' || getUserRole() == 'employee');
+    }
+
+    function isActiveUser() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Users can read their own data; admins can read all
+      allow read: if isAuthenticated() &&
+        (request.auth.uid == userId || isAdmin());
+      // Only admins can create/update users
+      allow create, update: if isAdmin();
+      // No one can delete users
+      allow delete: if false;
+    }
+
+    // ── Inventory ─────────────────────────────────────────────────────────────
+    match /inventory/{itemId} {
+      // All active authenticated users can read inventory
+      allow read: if isEmployee() && isActiveUser();
+      // Only admins can create, update, delete inventory
+      allow create, update, delete: if isAdmin() && isActiveUser();
+    }
+
+    // ── Sales ─────────────────────────────────────────────────────────────────
+    match /sales/{saleId} {
+      // All active authenticated users can read sales
+      allow read: if isEmployee() && isActiveUser();
+      // All employees can create sales
+      allow create: if isEmployee() && isActiveUser();
+      // Only admins can update (status changes) and delete
+      allow update, delete: if isAdmin() && isActiveUser();
+    }
+
+    // ── Customers ─────────────────────────────────────────────────────────────
+    match /customers/{customerId} {
+      allow read: if isEmployee() && isActiveUser();
+      allow create, update: if isEmployee() && isActiveUser();
+      // Only admins can delete customers
+      allow delete: if isAdmin() && isActiveUser();
+    }
+  }
+}
