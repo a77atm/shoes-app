@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../data/models/models.dart';
@@ -111,7 +110,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      childAspectRatio: 0.75,
+                      childAspectRatio: 1.45,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
                     ),
@@ -158,94 +157,82 @@ class _InventoryGridCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: isAdmin ? () => context.go('/inventory/edit/${item.id}') : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Product image
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
                 children: [
-                  item.imageUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: item.imageUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2)),
-                          errorWidget: (_, __, ___) =>
-                              const _PlaceholderImage(),
-                        )
-                      : const _PlaceholderImage(),
+                  Expanded(
+                    child: Text(
+                      item.brand,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   if (item.isLowStock)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: item.currentBalance == 0
-                              ? Colors.red
-                              : Colors.orange,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          item.currentBalance == 0 ? 'نفذ' : 'منخفض',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold),
-                        ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color:
+                            item.currentBalance == 0 ? Colors.red : Colors.orange,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        item.currentBalance == 0 ? 'نفذ' : 'منخفض',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                 ],
               ),
-            ),
-
-            // Product info
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 2),
+              Text(
+                item.productName,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(item.brand,
+                  Chip(
+                    label:
+                        Text(item.size, style: const TextStyle(fontSize: 11)),
+                    padding: EdgeInsets.zero,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  Flexible(
+                    child: Text(
+                      '${item.currentBalance} قطعة',
                       style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.bold)),
-                  Text(
-                    item.productName,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Chip(
-                        label: Text(item.size, style: const TextStyle(fontSize: 11)),
-                        padding: EdgeInsets.zero,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      Text(
-                        '${item.currentBalance} قطعة',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: item.isLowStock
-                                ? Colors.orange
-                                : colors.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    '${NumberFormat('#,##0', 'ar').format(item.currentPrice)} ج.م',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold, color: colors.primary),
+                          color: item.isLowStock
+                              ? Colors.orange
+                              : colors.onSurfaceVariant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                '${NumberFormat('#,##0', 'ar').format(item.currentPrice)} ج.م',
+                style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold, color: colors.primary),
+              ),
+            ],
+          ),
         ),
       ),
     )
@@ -267,20 +254,6 @@ class _InventoryListCard extends ConsumerWidget {
 
     return Card(
       child: ListTile(
-        leading: SizedBox(
-          width: 56,
-          height: 56,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: item.imageUrl != null
-                ? CachedNetworkImage(
-                    imageUrl: item.imageUrl!,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const _PlaceholderImage(),
-                  )
-                : const _PlaceholderImage(),
-          ),
-        ),
         title: Text('${item.brand} - ${item.productName}',
             style: theme.textTheme.bodyMedium
                 ?.copyWith(fontWeight: FontWeight.w600)),
@@ -308,19 +281,3 @@ class _InventoryListCard extends ConsumerWidget {
   }
 }
 
-class _PlaceholderImage extends StatelessWidget {
-  const _PlaceholderImage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceVariant,
-      child: Icon(
-        Icons.shopping_bag_outlined,
-        size: 40,
-        color:
-            Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
-      ),
-    );
-  }
-}

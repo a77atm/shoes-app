@@ -1,9 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../data/models/models.dart';
 import '../../../presentation/providers/providers.dart';
 
@@ -26,8 +23,6 @@ class _AddEditInventoryScreenState
   final _priceCtrl = TextEditingController();
   final _soldCtrl = TextEditingController();
 
-  File? _imageFile;
-  String? _existingImageUrl;
   bool _isLoading = false;
   bool _isLoadingData = false;
   InventoryModel? _existingItem;
@@ -53,7 +48,6 @@ class _AddEditInventoryScreenState
       _openingBalanceCtrl.text = item.openingBalance.toString();
       _priceCtrl.text = item.currentPrice.toString();
       _soldCtrl.text = item.soldQuantity.toString();
-      _existingImageUrl = item.imageUrl;
     }
     if (mounted) setState(() => _isLoadingData = false);
   }
@@ -67,41 +61,6 @@ class _AddEditInventoryScreenState
     _priceCtrl.dispose();
     _soldCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final result = await showModalBottomSheet<XFile?>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_rounded),
-              title: const Text('التقاط صورة'),
-              onTap: () async {
-                final img =
-                    await picker.pickImage(source: ImageSource.camera);
-                if (ctx.mounted) Navigator.pop(ctx, img);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded),
-              title: const Text('اختيار من المعرض'),
-              onTap: () async {
-                final img =
-                    await picker.pickImage(source: ImageSource.gallery);
-                if (ctx.mounted) Navigator.pop(ctx, img);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-    if (result != null) {
-      setState(() => _imageFile = File(result.path));
-    }
   }
 
   Future<void> _save() async {
@@ -119,9 +78,8 @@ class _AddEditInventoryScreenState
           openingBalance: int.parse(_openingBalanceCtrl.text),
           soldQuantity: int.parse(_soldCtrl.text),
           currentPrice: double.parse(_priceCtrl.text),
-          imageUrl: _existingImageUrl,
         );
-        await service.updateItem(updated, imageFile: _imageFile);
+        await service.updateItem(updated);
       } else {
         final newItem = InventoryModel(
           id: '',
@@ -131,11 +89,10 @@ class _AddEditInventoryScreenState
           openingBalance: int.parse(_openingBalanceCtrl.text),
           soldQuantity: int.tryParse(_soldCtrl.text) ?? 0,
           currentPrice: double.parse(_priceCtrl.text),
-          imageUrl: null,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
-        await service.addItem(newItem, imageFile: _imageFile);
+        await service.addItem(newItem);
       }
 
       if (mounted) {
@@ -186,8 +143,6 @@ class _AddEditInventoryScreenState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     if (_isLoadingData) {
       return Scaffold(
         appBar: AppBar(title: Text(isEdit ? 'تعديل المنتج' : 'إضافة منتج')),
@@ -212,75 +167,6 @@ class _AddEditInventoryScreenState
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Image picker
-            Center(
-              child: GestureDetector(
-                onTap: _pickImage,
-                child: Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: theme.colorScheme.outline.withOpacity(0.3)),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _imageFile != null
-                      ? Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.file(_imageFile!, fit: BoxFit.cover),
-                            const Positioned(
-                              bottom: 8,
-                              right: 8,
-                              child: CircleAvatar(
-                                radius: 14,
-                                backgroundColor: Colors.black54,
-                                child: Icon(Icons.edit, size: 16,
-                                    color: Colors.white),
-                              ),
-                            ),
-                          ],
-                        )
-                      : _existingImageUrl != null
-                          ? Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                CachedNetworkImage(
-                                    imageUrl: _existingImageUrl!,
-                                    fit: BoxFit.cover),
-                                const Positioned(
-                                  bottom: 8,
-                                  right: 8,
-                                  child: CircleAvatar(
-                                    radius: 14,
-                                    backgroundColor: Colors.black54,
-                                    child: Icon(Icons.edit, size: 16,
-                                        color: Colors.white),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.add_photo_alternate_rounded,
-                                    size: 40,
-                                    color: theme.colorScheme.onSurfaceVariant
-                                        .withOpacity(0.5)),
-                                const SizedBox(height: 8),
-                                Text('إضافة صورة',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme
-                                            .colorScheme.onSurfaceVariant)),
-                              ],
-                            ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
             // Brand
             TextFormField(
               controller: _brandCtrl,
