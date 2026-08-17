@@ -1,0 +1,121 @@
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index e1fe40c..b755089 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -3,6 +3,10 @@ plugins {
+     id("kotlin-android")
+     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+     id("dev.flutter.flutter-gradle-plugin")
++    // Reads android/app/google-services.json and wires the real Firebase project
++    // config into the app at build time. Without this, Firebase.initializeApp()
++    // has no valid config to load and fails at startup (the black screen).
++    id("com.google.gms.google-services")
+ }
+ 
+ android {
+@@ -20,7 +24,10 @@ android {
+     }
+ 
+     defaultConfig {
+-        applicationId = "com.example.shoe_store"
++        // Must match the "package_name" registered for this app in
++        // android/app/google-services.json ("shoesapp.com"), otherwise the
++        // Google Services plugin build fails with "No matching client found".
++        applicationId = "shoesapp.com"
+         minSdk = flutter.minSdkVersion
+         targetSdk = flutter.targetSdkVersion
+         versionCode = flutter.versionCode
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 62cb344..13c0d6b 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -1,4 +1,9 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
++    <!-- Required at runtime (release builds included) for any network call:
++         Firebase Auth/Firestore/Storage, cached_network_image, etc. The
++         debug/profile manifests already had this for the Flutter dev tools,
++         but it was missing here, so release builds had no network access. -->
++    <uses-permission android:name="android.permission.INTERNET"/>
+     <application
+         android:label="shoe_store"
+         android:name="${applicationName}"
+diff --git a/android/settings.gradle.kts b/android/settings.gradle.kts
+index c9e3737..c896cd8 100644
+--- a/android/settings.gradle.kts
++++ b/android/settings.gradle.kts
+@@ -20,6 +20,7 @@ pluginManagement {
+ plugins {
+     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
+ id("com.android.application") version "8.9.1" apply false
+-id("org.jetbrains.kotlin.android") version "2.1.0" apply false}
++id("org.jetbrains.kotlin.android") version "2.1.0" apply false
++id("com.google.gms.google-services") version "4.4.4" apply false}
+ 
+ include(":app")
+\ No newline at end of file
+diff --git a/lib/main.dart b/lib/main.dart
+index 9168d5b..c238da0 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -7,8 +7,59 @@ import 'presentation/providers/providers.dart';
+ 
+ void main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+-  // await Firebase.initializeApp();   // معطل مؤقتاً
+-  runApp(const ProviderScope(child: ShoeStoreApp()));
++
++  Object? initError;
++  try {
++    await Firebase.initializeApp();
++  } catch (e) {
++    // If Firebase still can't init for some reason, show a real error
++    // screen instead of a silent black screen so the problem is visible.
++    initError = e;
++  }
++
++  runApp(
++    initError == null
++        ? const ProviderScope(child: ShoeStoreApp())
++        : FirebaseInitErrorApp(error: initError),
++  );
++}
++
++class FirebaseInitErrorApp extends StatelessWidget {
++  const FirebaseInitErrorApp({super.key, required this.error});
++
++  final Object error;
++
++  @override
++  Widget build(BuildContext context) {
++    return MaterialApp(
++      debugShowCheckedModeBanner: false,
++      home: Scaffold(
++        backgroundColor: Colors.white,
++        body: Center(
++          child: Padding(
++            padding: const EdgeInsets.all(24),
++            child: Column(
++              mainAxisSize: MainAxisSize.min,
++              children: [
++                const Icon(Icons.error_outline, color: Colors.red, size: 48),
++                const SizedBox(height: 16),
++                const Text(
++                  'تعذّر بدء تشغيل Firebase',
++                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
++                ),
++                const SizedBox(height: 8),
++                Text(
++                  '$error',
++                  textAlign: TextAlign.center,
++                  style: const TextStyle(color: Colors.black54),
++                ),
++              ],
++            ),
++          ),
++        ),
++      ),
++    );
++  }
+ }
+ 
+ class ShoeStoreApp extends ConsumerWidget {
