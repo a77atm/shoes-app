@@ -34,7 +34,7 @@ dependencies:
   fl_chart: ^0.66.0
 
   # Utils
-  intl: ^0.19.0
+  intl: ^0.20.2
   uuid: ^4.2.2
   equatable: ^2.0.5
   dartz: ^0.10.1
