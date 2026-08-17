@@ -1,13 +1,10 @@
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
 import '../../core/constants/app_constants.dart';
 
 class InventoryService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final _uuid = const Uuid();
 
   // Stream of all inventory items
@@ -60,24 +57,17 @@ class InventoryService {
   }
 
   // Add inventory item
-  Future<InventoryModel> addItem(InventoryModel item, {File? imageFile}) async {
-    String? imageUrl;
-    if (imageFile != null) {
-      imageUrl = await _uploadImage(imageFile, item.id);
-    }
-
-    final newItem = item.copyWith(imageUrl: imageUrl ?? item.imageUrl);
+  Future<InventoryModel> addItem(InventoryModel item) async {
     final docRef = _firestore.collection(AppConstants.inventoryCollection).doc();
 
     final finalItem = InventoryModel(
       id: docRef.id,
-      brand: newItem.brand,
-      productName: newItem.productName,
-      size: newItem.size,
-      openingBalance: newItem.openingBalance,
-      soldQuantity: newItem.soldQuantity,
-      currentPrice: newItem.currentPrice,
-      imageUrl: imageUrl,
+      brand: item.brand,
+      productName: item.productName,
+      size: item.size,
+      openingBalance: item.openingBalance,
+      soldQuantity: item.soldQuantity,
+      currentPrice: item.currentPrice,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -87,26 +77,15 @@ class InventoryService {
   }
 
   // Update inventory item
-  Future<void> updateItem(InventoryModel item, {File? imageFile}) async {
-    String? imageUrl = item.imageUrl;
-    if (imageFile != null) {
-      imageUrl = await _uploadImage(imageFile, item.id);
-    }
-
-    final updated = item.copyWith(imageUrl: imageUrl);
+  Future<void> updateItem(InventoryModel item) async {
     await _firestore
         .collection(AppConstants.inventoryCollection)
         .doc(item.id)
-        .update(updated.toMap());
+        .update(item.toMap());
   }
 
   // Delete inventory item
   Future<void> deleteItem(String id) async {
-    // Delete image from storage if exists
-    try {
-      await _storage.ref('${AppConstants.productImagesPath}/$id').delete();
-    } catch (_) {}
-
     await _firestore
         .collection(AppConstants.inventoryCollection)
         .doc(id)
@@ -134,14 +113,6 @@ class InventoryService {
       'soldQuantity': FieldValue.increment(-quantityReturned),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
-  }
-
-  // Upload image to Firebase Storage
-  Future<String> _uploadImage(File imageFile, String itemId) async {
-    final ref = _storage.ref(
-        '${AppConstants.productImagesPath}/$itemId.jpg');
-    await ref.putFile(imageFile);
-    return await ref.getDownloadURL();
   }
 
   // Get inventory stats for dashboard
