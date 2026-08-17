@@ -516,7 +516,6 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
                                 size: item.size,
                                 quantity: 1,
                                 priceAtSale: item.currentPrice,
-                                imageUrl: item.imageUrl,
                               ));
                               Navigator.pop(context);
                             },
