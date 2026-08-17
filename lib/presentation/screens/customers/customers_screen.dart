@@ -220,21 +220,29 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen>
           FilledButton(
             onPressed: () async {
               if (!formKey.currentState!.validate()) return;
-              await ref.read(customerServiceProvider).addCustomer(
-                    CustomerModel(
-                      id: '',
-                      name: nameCtrl.text.trim(),
-                      phone: phoneCtrl.text.trim(),
-                      address: addressCtrl.text.trim().isEmpty
-                          ? null
-                          : addressCtrl.text.trim(),
-                      notes: notesCtrl.text.trim().isEmpty
-                          ? null
-                          : notesCtrl.text.trim(),
-                      createdAt: DateTime.now(),
-                    ),
+              try {
+                await ref.read(customerServiceProvider).addCustomer(
+                      CustomerModel(
+                        id: '',
+                        name: nameCtrl.text.trim(),
+                        phone: phoneCtrl.text.trim(),
+                        address: addressCtrl.text.trim().isEmpty
+                            ? null
+                            : addressCtrl.text.trim(),
+                        notes: notesCtrl.text.trim().isEmpty
+                            ? null
+                            : notesCtrl.text.trim(),
+                        createdAt: DateTime.now(),
+                      ),
+                    );
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red),
                   );
-              if (ctx.mounted) Navigator.pop(ctx);
+                }
+              }
             },
             child: const Text('حفظ'),
           ),
