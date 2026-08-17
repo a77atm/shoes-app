@@ -71,13 +71,11 @@ flutterfire configure
 في Firebase Console:
 - **Authentication** → Sign-in method → Email/Password ✓
 - **Cloud Firestore** → Create database (Production mode)
-- **Storage** → Get started
 
 ### 3. نشر قواعد الأمان
 
 ```bash
 firebase deploy --only firestore:rules
-firebase deploy --only storage
 ```
 
 ### 4. إضافة أول مستخدم (Admin)
@@ -146,7 +144,6 @@ flutter run
   "openingBalance": 50,
   "soldQuantity": 12,
   "currentPrice": 450.0,
-  "imageUrl": "string | null",
   "createdAt": "timestamp",
   "updatedAt": "timestamp"
 }
@@ -164,8 +161,7 @@ flutter run
       "productName": "string",
       "size": "string",
       "quantity": 2,
-      "priceAtSale": 450.0,
-      "imageUrl": "string | null"
+      "priceAtSale": 450.0
     }
   ],
   "totalAmount": 900.0,
@@ -196,14 +192,57 @@ flutter run
 
 ## 📋 Firestore Indexes المطلوبة
 
-أضف هذه الـ composite indexes في Firebase Console:
+> ⚙️ **النشر بقى تلقائي — مش خطوة يدوية.**
+> مصدر الحقيقة الوحيد هو ملف [`firestore.indexes.json`](firestore.indexes.json)،
+> وبيتنشر أوتوماتيك على مشروع `shoesapp-e64be` عن طريق:
+> - **Codemagic** — خطوة `Deploy Firestore indexes` بتشتغل قبل الـ build في كل الـ workflows.
+> - **GitHub Actions** — workflow [`.github/workflows/firestore-indexes.yml`](.github/workflows/firestore-indexes.yml)
+>   بيشتغل على كل push لـ `main` بيلمس `firestore.indexes.json`.
+>
+> الاتنين بينفذوا نفس السكريبت: [`scripts/deploy_firestore_indexes.sh`](scripts/deploy_firestore_indexes.sh)
+> → `firebase deploy --only firestore:indexes`.
+>
+> **المطلوب مرة واحدة بس:** تحط `FIREBASE_TOKEN` (من `firebase login:ci`) في:
+> Codemagic → Environment variables → group اسمه `firebase`،
+> و GitHub → Settings → Secrets and variables → Actions → `FIREBASE_TOKEN`.
 
-| Collection | Fields | Order |
-|-----------|--------|-------|
-| `sales` | `status` ASC, `saleDate` DESC | Composite |
-| `sales` | `customerId` ASC, `saleDate` DESC | Composite |
-| `sales` | `saleDate` ASC, `status` ASC | Composite |
-| `inventory` | `brand` ASC, `productName` ASC | Composite |
+### الـ Composite Indexes الموجودة فعلاً في `firestore.indexes.json`
+
+| # | Collection | Fields (بالترتيب) | الكويري اللي محتاجاها |
+|---|-----------|-------------------|------------------------|
+| 1 | `inventory` | `brand` ASC, `productName` ASC | `InventoryService.getInventoryStream()` — `orderBy('brand').orderBy('productName')` |
+| 2 | `sales` | `status` ASC, `saleDate` DESC | `SalesService.getSalesStream()` — فلتر الحالة + ترتيب بالتاريخ |
+| 3 | `sales` | `customerId` ASC, `saleDate` DESC | `getSalesStream()` — مبيعات عميل معيّن |
+| 4 | `sales` | `saleType` ASC, `saleDate` DESC | `getSalesStream()` — فلتر نوع البيع (عادي/مجمع) |
+| 5 | `sales` | `status` ASC, `customerId` ASC, `saleDate` DESC | `getSalesStream()` — حالة + عميل مع بعض |
+| 6 | `sales` | `status` ASC, `saleType` ASC, `saleDate` DESC | `getSalesStream()` — حالة + نوع البيع مع بعض |
+| 7 | `sales` | `customerId` ASC, `saleType` ASC, `saleDate` DESC | `getSalesStream()` — عميل + نوع البيع مع بعض |
+| 8 | `sales` | `status` ASC, `customerId` ASC, `saleType` ASC, `saleDate` DESC | `getSalesStream()` — الفلاتر التلاتة مع بعض |
+| 9 | `sales` | `saleDate` ASC, `status` ASC | `getSalesReport()` و `getDashboardStats()` — نطاق تاريخ + `status != returned` |
+| 10 | `sales` | `status` ASC, `saleDate` ASC | نفس الكويري السابقة (الترتيب البديل اللي ممكن يختاره الـ query planner) |
+
+**ملاحظات:**
+
+- فلاتر التاريخ (`startDate` / `endDate`) في شاشة المبيعات بتشتغل على نفس حقل `saleDate`
+  اللي بيتم الترتيب بيه، فمش محتاجة index زيادة فوق اللي فوق.
+- الكويريز دي **مش** محتاجة composite index (بيكفيها الـ single-field index التلقائي):
+  - `customers` — `orderBy('name')`
+  - `customers` — `where('pendingAmount' > 0).orderBy('pendingAmount', desc)` (نفس الحقل)
+  - `users` — `orderBy('name')`
+  - `sales` — `where('status' == pending)` لوحدها
+  - `inventory` — قراءة كل الـ collection من غير ترتيب (`getLowStockStream`)
+- بعد أي نشر، Firestore بياخد دقايق عشان الـ index يعدّي من **Building** لـ **Enabled**.
+  لحد ما يخلّص، الكويري ممكن تفضل ترمي `failed-precondition`.
+- **لو ضفت فلتر أو `orderBy` جديد في الكود:** ضيف الـ index المقابل في
+  `firestore.indexes.json` وبس — الـ CI هينشره لوحده.
+
+### نشر يدوي (لو محتاج)
+
+```bash
+firebase login
+firebase use shoesapp-e64be
+firebase deploy --only firestore:indexes
+```
 
 ---
 
@@ -212,7 +251,7 @@ flutter run
 | الميزة | الوصف |
 |--------|-------|
 | 🔐 Auth | تسجيل دخول + صلاحيات Admin/Employee |
-| 📦 مخزون | Brand+Name+Size + صورة + رصيد + سعر |
+| 📦 مخزون | Brand+Name+Size + رصيد + سعر (بدون صور) |
 | 💰 مبيعات | عادية/مجمعة + سعر وقت البيع + حالات |
 | 🔍 بحث وفلاتر | بحث + فلتر تاريخ/حالة/نوع/سعر |
 | 📊 تقارير | يومي/أسبوعي/شهري + مخطط الإيرادات |

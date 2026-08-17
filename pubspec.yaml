@@ -16,7 +16,6 @@ dependencies:
   firebase_core: ^2.24.2
   firebase_auth: ^4.16.0
   cloud_firestore: ^4.14.0
-  firebase_storage: ^11.6.0
 
   # State Management
   flutter_riverpod: ^2.4.9
@@ -28,8 +27,6 @@ dependencies:
   # UI
   google_fonts: ^6.1.0
   flutter_animate: ^4.3.0
-  cached_network_image: ^3.3.1
-  image_picker: ^1.0.7
   shimmer: ^3.0.0
   fl_chart: ^0.66.0
 

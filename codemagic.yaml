@@ -1,4 +1,12 @@
 # codemagic.yaml
+definitions:
+  scripts:
+    - &deploy_firestore_indexes
+      name: Deploy Firestore indexes
+      script: |
+        chmod +x scripts/deploy_firestore_indexes.sh
+        ./scripts/deploy_firestore_indexes.sh
+
 workflows:
   android-debug:
     name: Android Debug
@@ -6,7 +14,13 @@ workflows:
     environment:
       vars:
         FLUTTER_VERSION: "3.22.0"
+        FIREBASE_PROJECT_ID: "shoesapp-e64be"
+      groups:
+        # لازم تعمل group اسمه firebase في Codemagic فيه المتغير FIREBASE_TOKEN
+        # (تجيبه من: firebase login:ci)
+        - firebase
     scripts:
+      - *deploy_firestore_indexes
       - flutter pub get
       - flutter build apk --debug
     artifacts:
@@ -22,7 +36,11 @@ workflows:
     environment:
       vars:
         FLUTTER_VERSION: "3.22.0"
+        FIREBASE_PROJECT_ID: "shoesapp-e64be"
+      groups:
+        - firebase
     scripts:
+      - *deploy_firestore_indexes
       - flutter pub get
       - flutter build apk --release
     artifacts:
