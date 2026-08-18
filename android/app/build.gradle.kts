@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.example.shoe_store"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
