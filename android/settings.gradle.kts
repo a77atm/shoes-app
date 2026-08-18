@@ -19,7 +19,12 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.9.1" apply false
+    // AGP 8.9.1 was below Flutter's minimum (8.11.1) and the build failed with
+    // "Your project's Android Gradle Plugin version ... is lower than Flutter's
+    // minimum supported version". 8.13.0 is the last 8.x release; it needs
+    // Gradle >= 8.13, which is why gradle-wrapper.properties was moved off
+    // Gradle 9 (Gradle 9 requires AGP 9.x).
+    id("com.android.application") version "8.13.0" apply false
     id("org.jetbrains.kotlin.android") version "2.1.0" apply false
     id("com.google.gms.google-services") version "4.4.4" apply false
 }
