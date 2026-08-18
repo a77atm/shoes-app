@@ -1,0 +1,2 @@
+# pubspec.yaml declares assets/images/ ; git cannot track an empty folder,
+# and a missing asset directory makes `flutter build` fail outright.
