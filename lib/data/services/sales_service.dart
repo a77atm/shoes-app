@@ -200,6 +200,10 @@ class SalesService {
   /// transaction committed, which could leave the books and the stock out of
   /// sync if the app died in between. Everything now happens in one commit.
   Future<void> updateSaleStatus(SaleModel sale, String newStatus) async {
+    // Admin-only, exactly like deleteSale below. The security rules enforce
+    // this server-side as well; the guard just turns a raw permission-denied
+    // into the app's own Arabic message.
+    _tenant.requireAdmin();
     if (sale.status == newStatus) return;
 
     await _tenant.firestore.runTransaction<void>((transaction) async {
