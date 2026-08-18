@@ -1,9 +1,13 @@
-// This is a basic Flutter widget test.
+// Smoke test.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// The real app widget (ShoeStoreApp) cannot be pumped here: it builds a
+// GoRouter that talks to Firebase Auth on the first frame, and Firebase is not
+// initialised in a plain widget test. So we test the one screen in main.dart
+// that is pure UI with no Firebase dependency.
+//
+// (The previous version of this file was still the untouched Flutter counter
+// template and referenced a MyApp class that does not exist, so the whole test
+// suite failed to compile.)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,20 +15,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shoe_store/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('Firebase init error screen renders the error', (tester) async {
+    await tester.pumpWidget(const FirebaseInitErrorApp(error: 'boom'));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('تعذّر بدء تشغيل Firebase'), findsOneWidget);
+    expect(find.text('boom'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
   });
 }
