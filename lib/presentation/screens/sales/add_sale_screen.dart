@@ -48,14 +48,6 @@ class _AddSaleScreenState extends ConsumerState<AddSaleScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final user = await ref.read(authServiceProvider).getUserData(
-            ref.read(authStateProvider).when(
-                  data: (u) => u?.uid ?? '',
-                  loading: () => '',
-                  error: (_, __) => '',
-                ),
-          );
-
       final total = cart.fold(0.0, (sum, item) => sum + item.totalPrice);
 
       final sale = SaleModel(
@@ -67,8 +59,10 @@ class _AddSaleScreenState extends ConsumerState<AddSaleScreen> {
         status: _status,
         saleType: _saleType,
         notes: _notesCtrl.text.isEmpty ? null : _notesCtrl.text,
-        createdById: user?.id ?? '',
-        createdByName: user?.name ?? '',
+        // Author fields are stamped inside SalesService from the tenant
+        // context, so they always match request.auth.uid.
+        createdById: '',
+        createdByName: '',
         saleDate: _saleDate,
         createdAt: DateTime.now(),
       );

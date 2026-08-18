@@ -1,20 +1,34 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:uuid/uuid.dart';
+
 import '../models/models.dart';
-import '../../core/constants/app_constants.dart';
+import 'tenant_context.dart';
 
+/// Inventory, scoped to a single tenant.
+///
+/// The service holds a [TenantContext] and never builds a Firestore reference
+/// by hand — every query starts from `tenant.inventory`, which is
+/// `users/{ownerId}/inventory`. There is no code path that can read or write
+/// another store's stock.
 class InventoryService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final _uuid = const Uuid();
+  final TenantContext _tenant;
 
-  // Stream of all inventory items
+  InventoryService(this._tenant);
+
+  CollectionReference<Map<String, dynamic>> get _col => _tenant.inventory;
+
+  // ─── Reads ─────────────────────────────────────────────────────────────────
+
+  /// All items in this store, ordered by brand then product name.
+  ///
+  /// Requires the composite index `inventory: brand ASC, productName ASC`.
+  /// Search is applied client-side, exactly as before — the collection is
+  /// per-store now, so it is small.
   Stream<List<InventoryModel>> getInventoryStream({String? searchQuery}) {
-    Query<Map<String, dynamic>> query = _firestore
-        .collection(AppConstants.inventoryCollection)
+    return _col
         .orderBy('brand')
-        .orderBy('productName');
-
-    return query.snapshots().map((snap) {
+        .orderBy('productName')
+        .snapshots()
+        .map((snap) {
       var items =
           snap.docs.map((d) => InventoryModel.fromMap(d.data(), d.id)).toList();
 
@@ -31,35 +45,27 @@ class InventoryService {
     });
   }
 
-  // Get low stock items
+  /// Items at or below the low-stock threshold.
   Stream<List<InventoryModel>> getLowStockStream() {
-    return _firestore
-        .collection(AppConstants.inventoryCollection)
-        .snapshots()
-        .map((snap) {
-      return snap.docs
-          .map((d) => InventoryModel.fromMap(d.data(), d.id))
-          .where((item) => item.isLowStock)
-          .toList();
-    });
+    return _col.snapshots().map((snap) => snap.docs
+        .map((d) => InventoryModel.fromMap(d.data(), d.id))
+        .where((item) => item.isLowStock)
+        .toList());
   }
 
-  // Get single inventory item
   Future<InventoryModel?> getInventoryItem(String id) async {
-    final doc = await _firestore
-        .collection(AppConstants.inventoryCollection)
-        .doc(id)
-        .get();
-    if (doc.exists) {
-      return InventoryModel.fromMap(doc.data()!, doc.id);
-    }
-    return null;
+    final doc = await _col.doc(id).get();
+    if (!doc.exists || doc.data() == null) return null;
+    return InventoryModel.fromMap(doc.data()!, doc.id);
   }
 
-  // Add inventory item
-  Future<InventoryModel> addItem(InventoryModel item) async {
-    final docRef = _firestore.collection(AppConstants.inventoryCollection).doc();
+  // ─── Writes (admin only) ───────────────────────────────────────────────────
 
+  Future<InventoryModel> addItem(InventoryModel item) async {
+    _tenant.requireAdmin();
+
+    final docRef = _col.doc();
+    final now = DateTime.now();
     final finalItem = InventoryModel(
       id: docRef.id,
       brand: item.brand,
@@ -68,68 +74,56 @@ class InventoryService {
       openingBalance: item.openingBalance,
       soldQuantity: item.soldQuantity,
       currentPrice: item.currentPrice,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
+      createdAt: now,
+      updatedAt: now,
     );
 
     await docRef.set(finalItem.toMap());
     return finalItem;
   }
 
-  // Update inventory item
   Future<void> updateItem(InventoryModel item) async {
-    await _firestore
-        .collection(AppConstants.inventoryCollection)
-        .doc(item.id)
-        .update(item.toMap());
+    _tenant.requireAdmin();
+    await _col.doc(item.id).update(item.toMap());
   }
 
-  // Delete inventory item
   Future<void> deleteItem(String id) async {
-    await _firestore
-        .collection(AppConstants.inventoryCollection)
-        .doc(id)
-        .delete();
+    _tenant.requireAdmin();
+    await _col.doc(id).delete();
   }
 
-  // Update sold quantity (called when a sale is recorded)
+  // ─── Stock movement (any active member) ────────────────────────────────────
+  //
+  // Employees are not allowed to edit inventory, but they must be able to move
+  // stock when they record a sale. Both methods touch only `soldQuantity` and
+  // `updatedAt`, which is precisely the exception the security rules carve out.
+
   Future<void> updateSoldQuantity(String inventoryId, int quantitySold) async {
-    await _firestore
-        .collection(AppConstants.inventoryCollection)
-        .doc(inventoryId)
-        .update({
+    await _col.doc(inventoryId).update({
       'soldQuantity': FieldValue.increment(quantitySold),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
   }
 
-  // Revert sold quantity (called on sale return)
   Future<void> revertSoldQuantity(
       String inventoryId, int quantityReturned) async {
-    await _firestore
-        .collection(AppConstants.inventoryCollection)
-        .doc(inventoryId)
-        .update({
+    await _col.doc(inventoryId).update({
       'soldQuantity': FieldValue.increment(-quantityReturned),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
   }
 
-  // Get inventory stats for dashboard
-  Future<Map<String, int>> getInventoryStats() async {
-    final snap = await _firestore
-        .collection(AppConstants.inventoryCollection)
-        .get();
+  // ─── Dashboard ─────────────────────────────────────────────────────────────
 
+  Future<Map<String, int>> getInventoryStats() async {
+    final snap = await _col.get();
     final items =
         snap.docs.map((d) => InventoryModel.fromMap(d.data(), d.id)).toList();
-    final lowStock = items.where((i) => i.isLowStock).length;
-    final outOfStock = items.where((i) => i.currentBalance <= 0).length;
 
     return {
       'total': items.length,
-      'lowStock': lowStock,
-      'outOfStock': outOfStock,
+      'lowStock': items.where((i) => i.isLowStock).length,
+      'outOfStock': items.where((i) => i.currentBalance <= 0).length,
     };
   }
 }

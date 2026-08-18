@@ -1,6 +1,23 @@
 class AppConstants {
-  // Collections
+  // ─── Firestore structure (multi-tenant) ────────────────────────────────────
+  //
+  //   users/{uid}                                <- identity + membership doc
+  //     ├─ ownerId : UID of the tenant owner (== uid for an owner/admin)
+  //     ├─ role    : 'admin' | 'employee'
+  //     └─ isActive
+  //
+  //   users/{ownerId}/inventory/{itemId}         <- tenant data
+  //   users/{ownerId}/customers/{customerId}
+  //   users/{ownerId}/sales/{saleId}
+  //
+  // Every tenant document therefore lives *under* the owner's UID, so isolation
+  // is a property of the document path itself and not of a field that a query
+  // might forget to filter on.
+
+  /// Root collection holding one identity document per Firebase Auth user.
   static const String usersCollection = 'users';
+
+  /// Sub-collections nested under `users/{ownerId}`.
   static const String customersCollection = 'customers';
   static const String inventoryCollection = 'inventory';
   static const String salesCollection = 'sales';
@@ -8,6 +25,10 @@ class AppConstants {
   // Roles
   static const String roleAdmin = 'admin';
   static const String roleEmployee = 'employee';
+
+  /// Name of the secondary [FirebaseApp] used to create employee accounts
+  /// without clobbering the signed-in admin's session.
+  static const String secondaryAuthAppName = 'tenantUserProvisioning';
 
   // Sale Status
   static const String statusPaid = 'paid';
@@ -78,6 +99,21 @@ class AppStrings {
   static const String employee = 'موظف';
   static const String quantity = 'الكمية';
   static const String total = 'الإجمالي';
+  // ─── Multi-tenancy / accounts ──────────────────────────────────────────────
+  static const String signUp = 'إنشاء حساب جديد';
+  static const String signUpTitle = 'أنشئ متجرك الخاص';
+  static const String signUpSubtitle =
+      'كل متجر له مخزونه وعملاؤه ومبيعاته بشكل مستقل تماماً';
+  static const String storeName = 'اسم المتجر';
+  static const String confirmPassword = 'تأكيد كلمة المرور';
+  static const String haveAccount = 'لديك حساب بالفعل؟ تسجيل الدخول';
+  static const String noAccount = 'ليس لديك حساب؟ أنشئ متجرك';
+  static const String owner = 'مالك المتجر';
+  static const String accountDisabled =
+      'تم تعطيل هذا الحساب. تواصل مع مدير المتجر.';
+  static const String tenantLoading = 'جاري تحميل بيانات المتجر...';
+  static const String noPermission = 'ليس لديك صلاحية لتنفيذ هذا الإجراء';
+
   static const String dailyReport = 'تقرير يومي';
   static const String weeklyReport = 'تقرير أسبوعي';
   static const String monthlyReport = 'تقرير شهري';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/models.dart';
 import '../../../presentation/providers/providers.dart';
+import '../../../core/constants/app_constants.dart';
 
 class UsersScreen extends ConsumerWidget {
   const UsersScreen({super.key});
@@ -134,11 +135,17 @@ class UsersScreen extends ConsumerWidget {
                       if (!formKey.currentState!.validate()) return;
                       setState(() => isLoading = true);
                       try {
-                        await ref.read(authServiceProvider).createUser(
+                        // The new member inherits the admin's tenant, so they
+                        // land in exactly the same users/{ownerId}/... tree.
+                        final ownerId = ref.read(currentOwnerIdProvider);
+                        if (ownerId == null) throw AppStrings.tenantLoading;
+
+                        await ref.read(authServiceProvider).createEmployee(
                               name: nameCtrl.text.trim(),
                               email: emailCtrl.text.trim(),
                               password: passCtrl.text,
                               role: role,
+                              ownerId: ownerId,
                             );
                         if (ctx.mounted) Navigator.pop(ctx);
                       } catch (e) {
@@ -210,7 +217,9 @@ class _UserCard extends ConsumerWidget {
           children: [
             Text(user.email, style: theme.textTheme.bodySmall),
             Text(
-              user.isAdmin ? 'مدير' : 'موظف',
+              user.isOwner
+                  ? AppStrings.owner
+                  : (user.isAdmin ? AppStrings.admin : AppStrings.employee),
               style: TextStyle(
                   color: user.isAdmin ? colors.primary : colors.secondary,
                   fontSize: 12,
@@ -219,7 +228,9 @@ class _UserCard extends ConsumerWidget {
           ],
         ),
         isThreeLine: true,
-        trailing: isCurrentUser
+        // The tenant owner can never be deactivated — not by themselves and
+        // not by another admin. The security rules enforce the same thing.
+        trailing: (isCurrentUser || user.isOwner)
             ? null
             : Switch.adaptive(
                 value: user.isActive,

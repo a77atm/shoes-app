@@ -1,65 +1,236 @@
 rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Shoe Store — multi-tenant security rules
+//
+//  Data layout
+//  ───────────
+//    users/{uid}                              identity + membership document
+//      ├─ ownerId  : UID of the tenant this user belongs to
+//      │             (== uid for a store owner, == owner's uid for an employee)
+//      ├─ role     : 'admin' | 'employee'
+//      ├─ isActive : bool
+//      └─ name, email, storeName, createdAt
+//
+//    users/{ownerId}/inventory/{itemId}       ─┐
+//    users/{ownerId}/customers/{customerId}    ├─ tenant data
+//    users/{ownerId}/sales/{saleId}           ─┘
+//
+//  Isolation model
+//  ───────────────
+//  Tenant data is addressed by path, not by a field. To touch
+//  users/{ownerId}/sales/{id} you must prove your own membership document says
+//  `ownerId == {ownerId}`. A Firestore query is always rooted at one collection
+//  path, so no query can span two tenants — and because no rule below uses a
+//  recursive wildcard over these sub-collections, collection-group queries
+//  (the one construct that could read across tenants) are denied by default.
+//
+//  Role model (within one tenant)
+//  ──────────────────────────────
+//                        read   create   update               delete
+//    inventory   admin    ✓       ✓        ✓                    ✓
+//                employee ✓       ✗        soldQuantity only     ✗
+//    customers   admin    ✓       ✓        ✓                    ✓
+//                employee ✓       ✓        ✓                    ✗
+//    sales       admin    ✓       ✓        ✓                    ✓
+//                employee ✓       ✓        ✗                    ✗
+//
+//  Employees may bump `soldQuantity` because recording a sale moves stock; the
+//  affectedKeys() check makes that the *only* inventory field they can touch.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ─────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    // Repeated get() calls to the same path count once against the
+    // 10-document-access budget, so calling me() several times is cheap.
 
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    function meRef() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
 
-    function isAdmin() {
-      return isAuthenticated() && getUserRole() == 'admin';
+    function meExists() {
+      return isSignedIn() && exists(meRef());
     }
 
-    function isEmployee() {
-      return isAuthenticated() && (getUserRole() == 'admin' || getUserRole() == 'employee');
+    function me() {
+      return get(meRef()).data;
     }
 
-    function isActiveUser() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+    // Signed in, has a membership document, and has not been deactivated.
+    function isActiveMember() {
+      return meExists() && me().isActive == true;
     }
 
-    // ── Users ─────────────────────────────────────────────────────────────────
+    function isActiveAdmin() {
+      return isActiveMember() && me().role == 'admin';
+    }
+
+    // The tenant the caller belongs to.
+    function myOwnerId() {
+      return me().ownerId;
+    }
+
+    // Caller is an active member of the tenant rooted at {ownerId}.
+    function inTenant(ownerId) {
+      return isActiveMember() && myOwnerId() == ownerId;
+    }
+
+    // Caller is an active admin of the tenant rooted at {ownerId}.
+    function isTenantAdmin(ownerId) {
+      return isActiveAdmin() && myOwnerId() == ownerId;
+    }
+
+    // Keys this update actually changes.
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  users/{userId} — identity & membership
+    //
+    //  This collection is the trust anchor: every other rule resolves the
+    //  caller's tenant and role by reading their own document here, so writes
+    //  to it are locked down hard.
+    // ═════════════════════════════════════════════════════════════════════════
     match /users/{userId} {
-      // Users can read their own data; admins can read all
-      allow read: if isAuthenticated() &&
-        (request.auth.uid == userId || isAdmin());
-      // Only admins can create/update users
-      allow create, update: if isAdmin();
-      // No one can delete users
+
+      // Read your own document; an admin additionally reads members of their
+      // own tenant. Nobody can read a member of another tenant.
+      allow get: if isSignedIn() &&
+                    (request.auth.uid == userId ||
+                     (isActiveAdmin() && resource.data.ownerId == myOwnerId()));
+
+      // Listing is only ever done as `where('ownerId', '==', myOwnerId)`.
+      // Evaluated per returned document, so an unfiltered list() is rejected.
+      allow list: if isActiveMember() && resource.data.ownerId == myOwnerId();
+
+      allow create: if isSignedIn() && (
+
+        // (a) Self sign-up — a brand new store owner writes their own document.
+        //     This branch runs *before* the document exists, so it must not
+        //     call me(). The shape is pinned exactly: you may only make
+        //     yourself the admin of your own, brand new tenant.
+        (
+          request.auth.uid == userId
+          && request.resource.data.ownerId == userId
+          && request.resource.data.role == 'admin'
+          && request.resource.data.isActive == true
+          && request.resource.data.keys().hasOnly(
+               ['ownerId', 'name', 'email', 'role', 'isActive',
+                'storeName', 'createdAt'])
+          && request.resource.data.name is string
+          && request.resource.data.email is string
+        )
+
+        ||
+
+        // (b) An admin provisions a member of their own tenant. The new member
+        //     inherits the admin's ownerId and can never be an owner document.
+        (
+          isActiveAdmin()
+          && request.resource.data.ownerId == myOwnerId()
+          && request.resource.data.ownerId != userId
+          && request.resource.data.role in ['admin', 'employee']
+          && request.resource.data.isActive == true
+        )
+      );
+
+      // `ownerId` is immutable in every branch — moving a user between tenants
+      // is an Admin SDK operation, never an in-app edit.
+      allow update: if isSignedIn()
+        && !changedKeys().hasAny(['ownerId'])
+        && (
+
+          // (a) Your own profile — display fields only. You can never grant
+          //     yourself a role or reactivate your own disabled account.
+          (
+            request.auth.uid == userId
+            && changedKeys().hasOnly(['name', 'storeName'])
+          )
+
+          ||
+
+          // (b) An admin manages another member of the same tenant. The tenant
+          //     owner's document is off limits to everyone but the owner.
+          (
+            isActiveAdmin()
+            && resource.data.ownerId == myOwnerId()
+            && userId != resource.data.ownerId
+            && request.auth.uid != userId
+            && changedKeys().hasOnly(['name', 'role', 'isActive', 'storeName'])
+            && (!changedKeys().hasAny(['role'])
+                || request.resource.data.role in ['admin', 'employee'])
+          )
+        );
+
+      // Deleting a membership document orphans the auth account and, for an
+      // owner, strands a whole tenant's data. Admin SDK only.
       allow delete: if false;
     }
 
-    // ── Inventory ─────────────────────────────────────────────────────────────
-    match /inventory/{itemId} {
-      // All active authenticated users can read inventory
-      allow read: if isEmployee() && isActiveUser();
-      // Only admins can create, update, delete inventory
-      allow create, update, delete: if isAdmin() && isActiveUser();
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Tenant data — always under users/{ownerId}/…
+    // ═════════════════════════════════════════════════════════════════════════
+
+    match /users/{ownerId}/inventory/{itemId} {
+      allow read: if inTenant(ownerId);
+
+      allow create, delete: if isTenantAdmin(ownerId);
+
+      allow update: if isTenantAdmin(ownerId)
+        // Employees may only move stock — never re-price or rename an item.
+        || (inTenant(ownerId)
+            && changedKeys().hasOnly(['soldQuantity', 'updatedAt']));
     }
 
-    // ── Sales ─────────────────────────────────────────────────────────────────
-    match /sales/{saleId} {
-      // All active authenticated users can read sales
-      allow read: if isEmployee() && isActiveUser();
-      // All employees can create sales
-      allow create: if isEmployee() && isActiveUser();
-      // Only admins can update (status changes) and delete
-      allow update, delete: if isAdmin() && isActiveUser();
+    match /users/{ownerId}/customers/{customerId} {
+      allow read: if inTenant(ownerId);
+
+      // Any active member registers walk-in customers, and the sales
+      // transaction updates totalPurchases / pendingAmount on this document.
+      allow create, update: if inTenant(ownerId);
+
+      allow delete: if isTenantAdmin(ownerId);
     }
 
-    // ── Customers ─────────────────────────────────────────────────────────────
-    match /customers/{customerId} {
-      allow read: if isEmployee() && isActiveUser();
-      allow create, update: if isEmployee() && isActiveUser();
-      // Only admins can delete customers
-      allow delete: if isAdmin() && isActiveUser();
+    match /users/{ownerId}/sales/{saleId} {
+      allow read: if inTenant(ownerId);
+
+      // Employees record sales, but the invoice must be stamped with their own
+      // UID — no writing a sale in a colleague's name.
+      allow create: if inTenant(ownerId)
+        && request.resource.data.createdById == request.auth.uid
+        && request.resource.data.status in ['paid', 'pending', 'returned']
+        && request.resource.data.totalAmount is number
+        && request.resource.data.totalAmount >= 0
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0;
+
+      // Status changes and deletions are an admin decision. Authorship is
+      // immutable so an invoice can always be traced back to who rang it up.
+      allow update: if isTenantAdmin(ownerId)
+        && request.resource.data.createdById == resource.data.createdById;
+
+      allow delete: if isTenantAdmin(ownerId);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Everything else
+    //
+    //  Firestore already denies any path no rule matches, so the legacy flat
+    //  /inventory, /customers and /sales collections are now unreachable from
+    //  any client. This block is written out explicitly as documentation of
+    //  that intent — note that in Firestore an `allow … if false` never
+    //  overrides an `allow` elsewhere; denial here is simply the default.
+    // ═════════════════════════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

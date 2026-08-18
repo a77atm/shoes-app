@@ -254,14 +254,26 @@ class _SaleDetailView extends ConsumerWidget {
       ),
     );
 
-    if (confirm == true) {
-      await ref.read(salesServiceProvider).updateSaleStatus(
-            sale.id,
-            newStatus,
-            sale.status,
-            sale.totalAmount,
-            sale.customerId,
-          );
+    if (confirm != true) return;
+
+    try {
+      // The service now re-reads the sale inside the transaction and applies
+      // the customer + inventory side effects atomically, so it only needs the
+      // sale itself and the target status.
+      await ref.read(salesServiceProvider).updateSaleStatus(sale, newStatus);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تم تحديث حالة الفاتورة'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('خطأ: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
     }
   }
 }

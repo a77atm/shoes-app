@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../../presentation/providers/providers.dart';
+import '../../../core/constants/app_constants.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -182,6 +183,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         .animate()
                         .fadeIn(delay: 600.ms)
                         .slideY(begin: 0.3),
+                    const SizedBox(height: 12),
+
+                    // Self-registration creates a brand new, isolated store.
+                    TextButton(
+                      onPressed:
+                          _isLoading ? null : () => context.go('/signup'),
+                      child: const Text(AppStrings.noAccount),
+                    ).animate().fadeIn(delay: 700.ms),
                   ],
                 ),
               ),

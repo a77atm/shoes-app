@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../data/models/models.dart';
@@ -5,39 +7,102 @@ import '../../data/services/auth_service.dart';
 import '../../data/services/inventory_service.dart';
 import '../../data/services/sales_service.dart';
 import '../../data/services/customer_service.dart';
+import '../../data/services/tenant_context.dart';
 
-// ─── Services ────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+//  Provider graph (multi-tenant)
+//
+//    authStateProvider          Firebase Auth user (or null)
+//          │
+//    currentUserProvider        live users/{uid} membership document
+//          │
+//    tenantProvider             TenantContext  { uid, ownerId, role }
+//          │
+//    ┌─────┴───────────────┬──────────────────────┐
+//    inventoryService   salesService        customerService
+//          │                  │                    │
+//     data providers ────────────────────────────────
+//
+//  Everything below `tenantProvider` is rebuilt whenever the signed-in user,
+//  their role or their tenant changes, so switching accounts tears down and
+//  rebuilds every stream — no stale data from the previous store can survive.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
-final inventoryServiceProvider =
-    Provider<InventoryService>((ref) => InventoryService());
-final salesServiceProvider =
-    Provider<SalesService>((ref) => SalesService());
-final customerServiceProvider =
-    Provider<CustomerService>((ref) => CustomerService());
-
-// ─── Auth State ──────────────────────────────────────────────────────────────
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authServiceProvider).authStateChanges;
 });
 
-final currentUserProvider = FutureProvider<UserModel?>((ref) async {
-  final authState = ref.watch(authStateProvider);
-  final user = authState.when(
-    data: (u) => u,
-    loading: () => null,
-    error: (_, __) => null,
-  );
-  if (user == null) return null;
-  return ref.watch(authServiceProvider).getUserData(user.uid);
+/// Live membership document for the signed-in user.
+///
+/// This is a *stream* (it used to be a one-shot future) so that a role change
+/// or a deactivation performed by an admin takes effect immediately, without
+/// requiring the employee to restart the app.
+final currentUserProvider = StreamProvider<UserModel?>((ref) {
+  final firebaseUser = ref.watch(authStateProvider).valueOrNull;
+  if (firebaseUser == null) return Stream.value(null);
+  return ref.watch(authServiceProvider).watchUserData(firebaseUser.uid);
 });
+
+// ─── Tenant context ──────────────────────────────────────────────────────────
+
+/// The tenant the signed-in user is acting on behalf of, or `null` while the
+/// membership document is still loading / after sign-out / when the account has
+/// been deactivated.
+///
+/// Reactive data providers watch this one so they can stay in the *loading*
+/// state instead of flashing an error during start-up.
+final tenantOrNullProvider = Provider<TenantContext?>((ref) {
+  final user = ref.watch(currentUserProvider).valueOrNull;
+  if (user == null || !user.isActive) return null;
+  return TenantContext.fromUser(user);
+});
+
+/// Same thing, but throws instead of returning null.
+///
+/// Used to build the services: a service must never exist without a tenant,
+/// because an unscoped service would query across stores. Imperative call sites
+/// (button handlers) already run inside a try/catch and show the Arabic message.
+final tenantProvider = Provider<TenantContext>((ref) {
+  final user = ref.watch(currentUserProvider).valueOrNull;
+  if (user == null) throw const TenantNotReadyException();
+  if (!user.isActive) throw const TenantAccessDeniedException();
+  return TenantContext.fromUser(user);
+});
+
+/// A future that never completes — keeps a [FutureProvider] in its `loading`
+/// state while the tenant context is still resolving.
+Future<T> _pending<T>() => Completer<T>().future;
+
+/// Convenience accessors used by the UI. Null-safe, never throw.
+final currentOwnerIdProvider = Provider<String?>((ref) {
+  return ref.watch(currentUserProvider).valueOrNull?.ownerId;
+});
+
+final isAdminProvider = Provider<bool>((ref) {
+  return ref.watch(currentUserProvider).valueOrNull?.isAdmin ?? false;
+});
+
+// ─── Tenant-scoped services ──────────────────────────────────────────────────
+
+final inventoryServiceProvider = Provider<InventoryService>(
+    (ref) => InventoryService(ref.watch(tenantProvider)));
+
+final salesServiceProvider =
+    Provider<SalesService>((ref) => SalesService(ref.watch(tenantProvider)));
+
+final customerServiceProvider = Provider<CustomerService>(
+    (ref) => CustomerService(ref.watch(tenantProvider)));
 
 // ─── Inventory ───────────────────────────────────────────────────────────────
 
 final inventorySearchProvider = StateProvider<String>((ref) => '');
 
 final inventoryStreamProvider = StreamProvider<List<InventoryModel>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return const Stream.empty();
   final search = ref.watch(inventorySearchProvider);
   return ref
       .watch(inventoryServiceProvider)
@@ -45,11 +110,12 @@ final inventoryStreamProvider = StreamProvider<List<InventoryModel>>((ref) {
 });
 
 final lowStockStreamProvider = StreamProvider<List<InventoryModel>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return const Stream.empty();
   return ref.watch(inventoryServiceProvider).getLowStockStream();
 });
 
-final inventoryStatsProvider =
-    FutureProvider<Map<String, int>>((ref) async {
+final inventoryStatsProvider = FutureProvider<Map<String, int>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return _pending();
   return ref.watch(inventoryServiceProvider).getInventoryStats();
 });
 
@@ -59,14 +125,15 @@ final saleFiltersProvider =
     StateProvider<SaleFilters>((ref) => const SaleFilters());
 
 final salesStreamProvider = StreamProvider<List<SaleModel>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return const Stream.empty();
   final filters = ref.watch(saleFiltersProvider);
   return ref
       .watch(salesServiceProvider)
       .getSalesStream(filters.hasFilters ? filters : null);
 });
 
-final dashboardStatsProvider =
-    FutureProvider<DashboardStats>((ref) async {
+final dashboardStatsProvider = FutureProvider<DashboardStats>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return _pending();
   return ref.watch(salesServiceProvider).getDashboardStats();
 });
 
@@ -75,6 +142,7 @@ final dashboardStatsProvider =
 final customerSearchProvider = StateProvider<String>((ref) => '');
 
 final customersStreamProvider = StreamProvider<List<CustomerModel>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return const Stream.empty();
   final search = ref.watch(customerSearchProvider);
   return ref
       .watch(customerServiceProvider)
@@ -82,18 +150,23 @@ final customersStreamProvider = StreamProvider<List<CustomerModel>>((ref) {
 });
 
 final pendingCustomersProvider = StreamProvider<List<CustomerModel>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return const Stream.empty();
   return ref.watch(customerServiceProvider).getPendingCustomersStream();
 });
 
-final allCustomersProvider =
-    FutureProvider<List<CustomerModel>>((ref) async {
+final allCustomersProvider = FutureProvider<List<CustomerModel>>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return _pending();
   return ref.watch(customerServiceProvider).getAllCustomers();
 });
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 
+/// Members of the current tenant only — never every user in the database.
+/// Requires the composite index `users: ownerId ASC, name ASC`.
 final usersStreamProvider = StreamProvider<List<UserModel>>((ref) {
-  return ref.watch(authServiceProvider).getAllUsers();
+  final tenant = ref.watch(tenantOrNullProvider);
+  if (tenant == null) return const Stream.empty();
+  return ref.watch(authServiceProvider).getTenantUsers(tenant.ownerId);
 });
 
 // ─── Reports ─────────────────────────────────────────────────────────────────
@@ -109,8 +182,8 @@ final reportDateRangeProvider = StateProvider<DateRange>((ref) {
   );
 });
 
-final salesReportProvider =
-    FutureProvider.autoDispose<SalesReport>((ref) async {
+final salesReportProvider = FutureProvider.autoDispose<SalesReport>((ref) {
+  if (ref.watch(tenantOrNullProvider) == null) return _pending();
   final range = ref.watch(reportDateRangeProvider);
   return ref
       .watch(salesServiceProvider)

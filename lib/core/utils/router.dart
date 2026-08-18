@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/models.dart';
 import '../../presentation/providers/providers.dart';
 import '../../presentation/screens/auth/login_screen.dart';
+import '../../presentation/screens/auth/signup_screen.dart';
 import '../../presentation/screens/dashboard/dashboard_screen.dart';
 import '../../presentation/screens/inventory/inventory_screen.dart';
 import '../../presentation/screens/inventory/add_edit_inventory_screen.dart';
@@ -28,7 +29,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         error: (_, __) => false,
       );
 
-      final isAuthRoute = state.matchedLocation == '/login';
+      // Both /login and /signup are reachable while signed out.
+      final isAuthRoute = state.matchedLocation == '/login' ||
+          state.matchedLocation == '/signup';
 
       if (!isLoggedIn && !isAuthRoute) return '/login';
       if (isLoggedIn && isAuthRoute) return '/dashboard';
@@ -38,6 +41,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/signup',
+        builder: (context, state) => const SignUpScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => MainScaffold(child: child),

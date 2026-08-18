@@ -3,42 +3,76 @@ import 'package:equatable/equatable.dart';
 
 // ─── UserModel ───────────────────────────────────────────────────────────────
 
+/// Identity + tenant-membership document stored at `users/{id}`.
+///
+/// [ownerId] is the UID of the tenant this user belongs to:
+///  * a store owner who signs up        -> `ownerId == id` (role `admin`)
+///  * an employee created by that owner -> `ownerId == owner's UID`
+///
+/// All tenant data lives under `users/{ownerId}/...`, so [ownerId] is the only
+/// piece of state the app needs in order to scope every read and write.
 class UserModel extends Equatable {
   final String id;
+  final String ownerId;
   final String name;
   final String email;
   final String role; // 'admin' | 'employee'
   final bool isActive;
+  final String? storeName;
   final DateTime createdAt;
 
   const UserModel({
     required this.id,
+    required this.ownerId,
     required this.name,
     required this.email,
     required this.role,
     this.isActive = true,
+    this.storeName,
     required this.createdAt,
   });
 
   bool get isAdmin => role == 'admin';
 
+  /// True for the user who created the tenant. The owner document can never be
+  /// deactivated or demoted by anyone else.
+  bool get isOwner => id == ownerId;
+
   factory UserModel.fromMap(Map<String, dynamic> map, String id) {
+    final rawOwnerId = map['ownerId'] as String?;
     return UserModel(
       id: id,
+      // Documents written before multi-tenancy have no `ownerId`; treating them
+      // as their own tenant keeps legacy admin accounts able to sign in.
+      ownerId:
+          (rawOwnerId != null && rawOwnerId.isNotEmpty) ? rawOwnerId : id,
       name: map['name'] ?? '',
       email: map['email'] ?? '',
       role: map['role'] ?? 'employee',
       isActive: map['isActive'] ?? true,
+      storeName: map['storeName'],
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
   Map<String, dynamic> toMap() => {
+        'ownerId': ownerId,
         'name': name,
         'email': email,
         'role': role,
         'isActive': isActive,
+        'storeName': storeName,
         'createdAt': Timestamp.fromDate(createdAt),
+      };
+
+  /// Fields an admin may change on a member of their own tenant. Deliberately
+  /// excludes `ownerId` and `email` — moving a user between tenants is never an
+  /// in-app edit, and the security rules reject it.
+  Map<String, dynamic> toEditableMap() => {
+        'name': name,
+        'role': role,
+        'isActive': isActive,
+        'storeName': storeName,
       };
 
   UserModel copyWith({
@@ -46,18 +80,21 @@ class UserModel extends Equatable {
     String? email,
     String? role,
     bool? isActive,
+    String? storeName,
   }) =>
       UserModel(
         id: id,
+        ownerId: ownerId,
         name: name ?? this.name,
         email: email ?? this.email,
         role: role ?? this.role,
         isActive: isActive ?? this.isActive,
+        storeName: storeName ?? this.storeName,
         createdAt: createdAt,
       );
 
   @override
-  List<Object?> get props => [id, name, email, role, isActive];
+  List<Object?> get props => [id, ownerId, name, email, role, isActive];
 }
 
 // ─── CustomerModel ───────────────────────────────────────────────────────────
