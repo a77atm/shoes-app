@@ -1,8 +1,8 @@
 # codemagic.yaml
 definitions:
   scripts:
-    - &deploy_firestore_indexes
-      name: Deploy Firestore indexes
+    - &deploy_firestore
+      name: Deploy Firestore rules + indexes
       script: |
         chmod +x scripts/deploy_firestore_indexes.sh
         ./scripts/deploy_firestore_indexes.sh
@@ -12,15 +12,17 @@ workflows:
     name: Android Debug
     max_build_duration: 30
     environment:
+      # pubspec.lock generated with flutter >= 3.44 - do NOT pin an old version.
+      # (FLUTTER_VERSION as a var is ignored by Codemagic; this key is the real one.)
+      flutter: stable
       vars:
-        FLUTTER_VERSION: "3.22.0"
         FIREBASE_PROJECT_ID: "shoesapp-e64be"
       groups:
-        # لازم تعمل group اسمه firebase في Codemagic فيه المتغير FIREBASE_TOKEN
-        # (تجيبه من: firebase login:ci)
+        # firebase group in Codemagic must contain FIREBASE_TOKEN
+        # (firebase login:ci)
         - firebase
     scripts:
-      - *deploy_firestore_indexes
+      - *deploy_firestore
       - flutter pub get
       - flutter build apk --debug
     artifacts:
@@ -34,13 +36,13 @@ workflows:
     name: Android Release
     max_build_duration: 30
     environment:
+      flutter: stable
       vars:
-        FLUTTER_VERSION: "3.22.0"
         FIREBASE_PROJECT_ID: "shoesapp-e64be"
       groups:
         - firebase
     scripts:
-      - *deploy_firestore_indexes
+      - *deploy_firestore
       - flutter pub get
       - flutter build apk --release
     artifacts:
