@@ -25,7 +25,7 @@ plugins {
     // Gradle >= 8.13, which is why gradle-wrapper.properties was moved off
     // Gradle 9 (Gradle 9 requires AGP 9.x).
     id("com.android.application") version "8.13.0" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
     id("com.google.gms.google-services") version "4.4.4" apply false
 }
 
