@@ -1,40 +1,72 @@
-plugins {
-    id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-    id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
 }
 
-android {
-    namespace = "com.example.shoe_store"
-    compileSdk = 35
-    ndkVersion = flutter.ndkVersion
+val newBuildDir: Directory =
+    rootProject.layout.buildDirectory
+        .dir("../../build")
+        .get()
+rootProject.layout.buildDirectory.value(newBuildDir)
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+subprojects {
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
+subprojects {
+    project.evaluationDependsOn(":app")
+}
 
-    defaultConfig {
-        applicationId = "shoesapp.com"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
-    }
-
-    buildTypes {
-        release {
-            signingConfig = signingConfigs.getByName("debug")
+// ========== أضف الجزء ده ==========
+subprojects {
+    afterEvaluate {
+        if (project.hasProperty("android")) {
+            val android = project.extensions.findByName("android")
+            if (android != null) {
+                try {
+                    // Force compileSdk 35 for all plugins
+                    val setCompileSdk = android.javaClass.getMethod("setCompileSdkVersion", Int::class.java)
+                    setCompileSdk.invoke(android, 35)
+                } catch (e: Exception) {
+                    // fallback for newer AGP
+                    try {
+                        val compileSdkField = android.javaClass.getDeclaredField("compileSdk")
+                        compileSdkField.isAccessible = true
+                        compileSdkField.set(android, 35)
+                    } catch (e2: Exception) {
+                        // ignore
+                    }
+                }
+            }
         }
     }
 }
+// ==================================
 
-flutter {
-    source = "../.."
+tasks.register<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
+}
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            val androidExtension = project.extensions.findByName("android")
+            if (androidExtension != null) {
+                try {
+                    // For AGP 8+
+                    androidExtension.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
+                        .invoke(androidExtension, 35)
+                } catch (e: Exception) {
+                    try {
+                        androidExtension.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
+                            .invoke(androidExtension, 35)
+                    } catch (e2: Exception) {
+                        println("Could not set compileSdk for ${project.name}")
+                    }
+                }
+            }
+        }
+    }
 }
